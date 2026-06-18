@@ -1,0 +1,87 @@
+<svg width="800" height="1000" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+    <!-- Background -->
+    <rect x="0" y="0" width="100" height="120" fill="#fff" stroke="#333" stroke-width="0.5"/>
+    
+    <!-- Legend Box (Top Left) -->
+    <rect x="2" y="2" width="20" height="10" fill="none" stroke="#333" stroke-width="0.2"/>
+    <text x="3" y="5" font-size="1.5" fill="#333">Legend:</text>
+    <rect x="3" y="7" width="2" height="2" fill="#ef4444"/>
+    <text x="6" y="8.5" font-size="1.5" fill="#333">Fire Extinguisher</text>
+
+    <!-- Top Area (Pedestrial / Trench) -->
+    <rect x="30" y="2" width="60" height="10" fill="#e2e8f0" stroke="#94a3b8" stroke-width="0.2"/>
+    <text x="60" y="8" font-size="3" text-anchor="middle" fill="#64748b">Pedestrial / Gangway</text>
+
+    <!-- Right Side Common Area / Gangway (Vertical) -->
+    <rect x="90" y="15" width="8" height="100" fill="#fef08a" stroke="#ca8a04" stroke-width="0.2"/>
+    <text x="94" y="60" font-size="3" text-anchor="middle" transform="rotate(90, 94, 60)" fill="#854d0e">Common Area / Gangway</text>
+
+    <!-- Exits/Entries on Right -->
+    <polygon points="98,45 100,47 98,49" fill="#ef4444"/> <!-- Exit Icon -->
+    <text x="95" y="48" font-size="2" text-anchor="end" fill="#ef4444">Exit</text>
+    
+    <polygon points="98,55 96,57 98,59" fill="#22c55e"/> <!-- Entry Icon -->
+    <text x="95" y="58" font-size="2" text-anchor="end" fill="#22c55e">Entry</text>
+
+    <polygon points="98,85 96,87 98,89" fill="#22c55e"/> <!-- Gate Icon -->
+    <text x="95" y="88" font-size="2" text-anchor="end" fill="#22c55e">Main Gate</text>
+
+    <!-- RACK BLOCKS -->
+    <!-- We will define 3 main storage areas based on the map structure -->
+
+    <!-- Block 1 (Top) -->
+    <rect x="30" y="15" width="55" height="20" fill="#fef08a" fill-opacity="0.3" stroke="none" />
+    <g id="Block1_Aisles">
+        <!-- Horizontal Aisles are gaps between rack rows -->
+    </g>
+    <!-- Racks in Block 1 -->
+    <g id="Racks_Block1" fill="#e2e8f0" stroke="#475569" stroke-width="0.1">
+        <!-- Row A -->
+        <rect x="32" y="16" width="50" height="3" />
+        <text x="31" y="18" font-size="2" fill="#475569">A</text>
+        <!-- Row B -->
+        <rect x="32" y="21" width="50" height="3" />
+        <text x="31" y="23" font-size="2" fill="#475569">B</text>
+        <!-- Row C -->
+        <rect x="32" y="26" width="50" height="3" />
+        <text x="31" y="28" font-size="2" fill="#475569">C</text>
+    </g>
+
+    <!-- Block 2 (Middle - Pallet Area) -->
+    <text x="25" y="50" font-size="2.5" transform="rotate(-90, 25, 50)" fill="#64748b">Pallet Area</text>
+    <g id="Racks_Block2" fill="#e2e8f0" stroke="#475569" stroke-width="0.1">
+        <!-- Row D -->
+        <rect x="32" y="40" width="50" height="3" />
+        <text x="31" y="42" font-size="2" fill="#475569">D</text>
+        <!-- Row E -->
+        <rect x="32" y="45" width="50" height="3" />
+        <text x="31" y="47" font-size="2" fill="#475569">E</text>
+        <!-- Row F -->
+        <rect x="32" y="50" width="50" height="3" />
+        <text x="31" y="52" font-size="2" fill="#475569">F</text>
+        <!-- Row G -->
+        <rect x="32" y="55" width="50" height="3" />
+        <text x="31" y="57" font-size="2" fill="#475569">G</text>
+    </g>
+
+    <!-- Block 3 (Bottom) -->
+    <g id="Racks_Block3" fill="#e2e8f0" stroke="#475569" stroke-width="0.1">
+        <!-- Row H -->
+        <rect x="32" y="70" width="50" height="3" />
+        <text x="31" y="72" font-size="2" fill="#475569">H</text>
+        <!-- Row I -->
+        <rect x="32" y="75" width="50" height="3" />
+        <text x="31" y="77" font-size="2" fill="#475569">I</text>
+        <!-- Row J -->
+        <rect x="32" y="80" width="50" height="3" />
+        <text x="31" y="82" font-size="2" fill="#475569">J</text>
+        <!-- Row K -->
+        <rect x="32" y="85" width="50" height="3" />
+        <text x="31" y="87" font-size="2" fill="#475569">K</text>
+    </g>
+
+    <!-- Lift / Special Areas (Left) -->
+    <rect x="5" y="25" width="15" height="20" fill="#f3e8ff" stroke="#a855f7" stroke-width="0.2"/>
+    <text x="12.5" y="35" font-size="2" text-anchor="middle" fill="#7e22ce">Scissor Lift</text>
+
+</svg>

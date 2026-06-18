@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warehouse Locator</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+    <div class="main-layout">
+        <!-- Sidebar for Product Directory -->
+        <aside class="sidebar">
+            <h2>Inventory</h2>
+            <p class="subtitle">Click an item to locate.</p>
+            <div id="productList" class="product-list">
+                <!-- Populated by JS -->
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="content">
+            <header>
+                <h1>Warehouse Locator</h1>
+            </header>
+
+            <div class="search-box">
+                <input type="text" id="productIdInput" placeholder="Enter Product ID (e.g., 12345)...">
+                <button onclick="findProduct()">Locate</button>
+            </div>
+
+            <div id="statusMessage"></div>
+
+            <div class="map-container" id="mapContainer">
+                <img src="warehouse_map.svg" alt="Warehouse Map" id="warehouseMap">
+                <canvas id="pathCanvas"></canvas>
+
+                <!-- Markers for Start and End -->
+                <div id="startMarker" class="marker start-marker" style="display: none;">Entry</div>
+                <div id="endMarker" class="marker end-marker" style="display: none;">Target</div>
+            </div>
+        </main>
+    </div>
+
+    <script src="data.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
