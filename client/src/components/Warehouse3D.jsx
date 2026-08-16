@@ -707,12 +707,16 @@ function computeRoute(targetProduct, entryId = 'ENTRY_1') {
     let rackLetter = loc.rack || targetProduct.primary_rack || 'A';
     rackLetter = String(rackLetter).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'A';
     
-    const colNum = (loc.col_number || 1) - 1;
-    const rp = getRackWorldPosition(rackLetter, colNum);
+    const rawCol = parseInt(loc.col_number, 10);
+    const colNum = (isNaN(rawCol) || rawCol < 1) ? 0 : rawCol - 1;
+    const maxCols = getRackCols(rackLetter);
+    const clampedCol = Math.min(colNum, maxCols - 1);
+    
+    const rp = getRackWorldPosition(rackLetter, clampedCol);
     const rack_x = rp.x;
     const rack_z = rp.z;
     const aisle_z = getAisleZ(rackLetter);
-    const isBottom = ['B','E','G','I','K','N','P','R','T','V','X','Z'].includes(rackLetter);
+    const isBottom = ['B','E','G','I','K','N','P','R','T','X','Z'].includes(rackLetter);
     const face_z = isBottom ? rack_z + SHELF_APPROACH : rack_z - SHELF_APPROACH;
 
     pts.push(new THREE.Vector3(entry.x, FLOOR_Y, entry.z));
@@ -731,8 +735,12 @@ function computeRoute(targetProduct, entryId = 'ENTRY_1') {
     if (!rackId.startsWith('AC')) {
        rackId = String(rackId).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'V';
     }
-    const sectionIndex = parseInt(loc.rack_section || '01', 10) - 1;
-    const rp = getBinRackWorldPosition(rackId, sectionIndex);
+    const rawSection = parseInt(loc.rack_section || '1', 10);
+    const sectionIndex = (isNaN(rawSection) || rawSection < 1) ? 0 : rawSection - 1;
+    const binRack = BLUE_BIN_RACKS.find(r => r.id === rackId);
+    const maxCols = binRack ? binRack.cols : 45;
+    const clampedSection = Math.min(sectionIndex, maxCols - 1);
+    const rp = getBinRackWorldPosition(rackId, clampedSection);
     const rack_x = rp.x;
     const rack_z = rp.z;
 
@@ -1069,23 +1077,46 @@ function smoothstep(t) { return t * t * (3 - 2 * t); }
 function resolveTargetInfo(targetProduct) {
   if (!targetProduct) return { type: null, rackId: null };
 
-  const rackType = getRackType(targetProduct.primary_rack);
+  const rack = targetProduct.primary_rack;
+  const rackType = getRackType(rack);
   const loc = targetProduct.locations?.[0];
 
   if (rackType === 'PALLET') {
-    let rackLetter = loc?.rack || targetProduct.primary_rack || 'A';
-    rackLetter = String(rackLetter).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'A';
-    const col = (loc?.col_number || 1) - 1;
-    return { type: 'PALLET', rackLetter, col };
+    // Extract the single rack letter from the location or primary_rack
+    let rackLetter = (loc?.rack || rack || 'A').toString().trim();
+    // For pallet racks, the rack is always a single letter (A-Z, not V)
+    rackLetter = rackLetter.replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'A';
+    
+    // col_number from Excel is 1-based; convert to 0-based index
+    const rawCol = parseInt(loc?.col_number, 10);
+    const col = (isNaN(rawCol) || rawCol < 1) ? 0 : rawCol - 1;
+    
+    // Clamp to valid range for this rack row
+    const maxCols = getRackCols(rackLetter);
+    const clampedCol = Math.min(col, maxCols - 1);
+    
+    return { type: 'PALLET', rackLetter, col: clampedCol };
   } else if (rackType === 'BLUE_BIN') {
-    let rackId = loc?.rack || targetProduct.primary_rack || 'V';
+    // For V racks: rack='V', rack_section='04' means V04 (the 4th V-rack section)
+    // For AC racks: rack='AC1', rack_section='01' etc.
+    let rackId = (loc?.rack || rack || 'V').toString().trim();
     if (!rackId.startsWith('AC')) {
-       rackId = String(rackId).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'V';
+      rackId = rackId.replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'V';
     }
-    const section = parseInt(loc?.rack_section || '01', 10) - 1;
-    return { type: 'BLUE_BIN', rackId, col: section };
+    
+    // rack_section is the V-rack section number (V01, V04, V24 etc.) — use as column index
+    const section = parseInt(loc?.rack_section || '1', 10);
+    const col = (isNaN(section) || section < 1) ? 0 : section - 1;
+    
+    // Clamp to max cols for this bin rack
+    const binRack = BLUE_BIN_RACKS.find(r => r.id === rackId);
+    const maxCols = binRack ? binRack.cols : 45;
+    const clampedCol = Math.min(col, maxCols - 1);
+    
+    return { type: 'BLUE_BIN', rackId, col: clampedCol };
   } else if (rackType === 'CABINET') {
-    const numMatch = targetProduct.primary_rack?.match(/(\d+)/);
+    const rackStr = (rack || '').toString();
+    const numMatch = rackStr.match(/(\d+)/);
     const cabinetNum = numMatch ? parseInt(numMatch[1], 10) : 1;
     return { type: 'CABINET', cabinetNum };
   } else if (rackType === 'CHEMICAL') {

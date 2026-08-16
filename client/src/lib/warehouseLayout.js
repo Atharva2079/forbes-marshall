@@ -18,16 +18,21 @@ export const RACK_TYPES = {
    PALLET RACK DEFINITIONS (A to Z)
  ───────────────────────────────────────────────────── */
 export const PALLET_ROWS = [
-  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y'
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'W', 'X', 'Y', 'Z'
 ];
 
 /**
- * Get dynamic column count per row based on layout.
- * Rows A-G are shorter (around 20 columns) due to left V-racks.
- * Rows H-Z are longer (around 40 columns) extending across the floor.
+ * Get actual column count per row — matches real warehouse data.
+ * Values derived from max col_number found in Excel locator data.
  */
+const RACK_COL_COUNTS = {
+  A: 16, B: 16, C: 16, D: 17, E: 16, F: 14, G: 28,
+  H: 28, I: 25, J: 24, K: 26, L: 28, M: 28,
+  N: 30, O: 28, P: 30, Q: 30, R: 30, S: 13, T: 28,
+  U: 28, W: 28, X: 28, Y: 32, Z: 40
+};
 export function getRackCols(row) {
-  return ['A', 'B', 'C', 'D', 'E', 'F', 'G'].includes(row) ? 20 : 40;
+  return RACK_COL_COUNTS[row] || 20;
 }
 
 /* ─────────────────────────────────────────────────────
@@ -73,7 +78,7 @@ export const CABINET_D = 0.5;
 export const CABINET_H = 1.9;
 
 export const WAREHOUSE_W = 82;
-export const WAREHOUSE_D = 98;
+export const WAREHOUSE_D = 104;
 
 // Z positioning mapping based on PDF gangways
 // Pairs: A/B, D/E, F/G, H/I, J/K, M/N, O/P, Q/R, S/T, U/V, W/X
@@ -90,9 +95,9 @@ export const Z_OFFSETS = {
   'O': 46.0, 'P': 47.5,
   'Q': 51.5, 'R': 53.0,
   'S': 57.0, 'T': 58.5,
-  'U': 62.5, 'V': 64.0,
+  'U': 62.5,
   'W': 68.0, 'X': 69.5,
-  'Y': 73.5
+  'Y': 73.5, 'Z': 77.5
 };
 
 export const GANGWAY_Z = {
@@ -107,9 +112,9 @@ export const GANGWAY_Z = {
   'O': 44.0, 'P': 49.5,
   'Q': 49.5, 'R': 55.0,
   'S': 55.0, 'T': 60.5,
-  'U': 60.5, 'V': 66.0,
+  'U': 60.5,
   'W': 66.0, 'X': 71.5,
-  'Y': 71.5
+  'Y': 71.5, 'Z': 79.5
 };
 
 /* ─────────────────────────────────────────────────────
