@@ -1,16 +1,62 @@
 const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
+const multer  = require('multer');
+const fs      = require('fs');
 
 const app  = express();
 const PORT = 3001;
 
 // ---- Middleware ----
 app.use(cors({ origin: '*' }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+
+// ---- File upload config ----
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB max
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type ${ext} not supported. Allowed: ${allowed.join(', ')}`));
+    }
+  }
+});
 
 // ---- Database ----
 const db = require('./data/store');
+
+// ---- Ticket Parser ----
+const { parseTicketText, batchLocate } = require('./utils/ticketParser');
+
+// ---- PDF Parser (lazy-loaded) ----
+let pdfjsLib = null;
+function getPdfLib() {
+  if (!pdfjsLib) {
+    pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+  }
+  return pdfjsLib;
+}
+
+/**
+ * Extract text from a PDF buffer using pdfjs-dist.
+ */
+async function extractPdfText(buffer) {
+  const lib = getPdfLib();
+  const data = new Uint8Array(buffer);
+  const doc = await lib.getDocument({ data, useSystemFonts: true }).promise;
+  let allText = '';
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const tc = await page.getTextContent();
+    const pageText = tc.items.map(it => it.str).join(' ');
+    allText += pageText + '\n';
+  }
+  return allText;
+}
 
 // ============================================================
 //  GET /api/layout  —  warehouse metadata + rack info + stats
@@ -188,6 +234,127 @@ app.get('/api/locate/:locatorCode', (req, res) => {
     });
 });
 
+// ============================================================
+//  POST /api/batch-locate  —  batch lookup by item codes / locator codes
+//  Body: { codes: ["25-121-1114846", "D01-E22-B1", ...] }
+//  Returns: { results: [...products], notFound: [...codes] }
+// ============================================================
+app.post('/api/batch-locate', (req, res) => {
+    const { codes } = req.body;
+    if (!Array.isArray(codes) || codes.length === 0) {
+        return res.status(400).json({ error: 'Provide an array of codes' });
+    }
+
+    // Limit to 200 codes per request
+    const limitedCodes = codes.slice(0, 200);
+    const { results, notFound } = batchLocate(limitedCodes, db);
+
+    res.json({
+        total_searched: limitedCodes.length,
+        total_found: results.length,
+        total_not_found: notFound.length,
+        results,
+        notFound,
+    });
+});
+
+// ============================================================
+//  POST /api/parse-ticket-text  —  parse raw text → matched codes
+//  Body: { text: "raw text from OCR or manual input" }
+//  Returns: { ticketNo, itemCodes, locatorCodes, items }
+// ============================================================
+app.post('/api/parse-ticket-text', (req, res) => {
+    const { text } = req.body;
+    if (!text || typeof text !== 'string') {
+        return res.status(400).json({ error: 'Provide text content' });
+    }
+
+    const parsed = parseTicketText(text);
+
+    // Now batch-locate all found codes (both item codes and locator codes)
+    const allCodes = [...parsed.itemCodes, ...parsed.locatorCodes];
+    const { results, notFound } = batchLocate(allCodes, db);
+
+    res.json({
+        ticketNo: parsed.ticketNo,
+        itemCodes: parsed.itemCodes,
+        locatorCodes: parsed.locatorCodes,
+        ticketItems: parsed.items,
+        total_found: results.length,
+        total_not_found: notFound.length,
+        results,
+        notFound,
+    });
+});
+
+// ============================================================
+//  POST /api/upload-ticket  —  upload PDF file → extract text → locate items
+//  Multipart form data with file field "ticket"
+//  Returns: { ticketNo, results, notFound, extractedText (truncated) }
+// ============================================================
+app.post('/api/upload-ticket', upload.single('ticket'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+
+        const ext = path.extname(req.file.originalname).toLowerCase();
+        let extractedText = '';
+
+        if (ext === '.pdf') {
+            // Extract text from PDF
+            extractedText = await extractPdfText(req.file.buffer);
+        } else {
+            // For images, return the raw text hint — client will do OCR
+            // But if client sends extracted text along with the image, use that
+            extractedText = req.body.extractedText || '';
+        }
+
+        if (!extractedText.trim()) {
+            return res.json({
+                ticketNo: null,
+                results: [],
+                notFound: [],
+                extractedText: '',
+                message: 'No text could be extracted from this file. Try uploading a text-based PDF or use the manual text input.',
+            });
+        }
+
+        // Parse the extracted text
+        const parsed = parseTicketText(extractedText);
+
+        // Batch locate all codes
+        const allCodes = [...parsed.itemCodes, ...parsed.locatorCodes];
+        const { results, notFound } = batchLocate(allCodes, db);
+
+        res.json({
+            ticketNo: parsed.ticketNo,
+            itemCodes: parsed.itemCodes,
+            locatorCodes: parsed.locatorCodes,
+            ticketItems: parsed.items,
+            total_found: results.length,
+            total_not_found: notFound.length,
+            results,
+            notFound,
+            extractedText: extractedText.substring(0, 500) + (extractedText.length > 500 ? '...' : ''),
+        });
+    } catch (err) {
+        console.error('Upload ticket error:', err);
+        res.status(500).json({ error: 'Failed to process ticket file', detail: err.message });
+    }
+});
+
+// ---- Error handler for multer ----
+app.use((err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        return res.status(400).json({ error: err.message });
+    }
+    if (err) {
+        return res.status(400).json({ error: err.message });
+    }
+    next();
+});
+
 // ---- Start ----
 app.listen(PORT, () => {
     console.log(`\n🏭  Forbes Marshall WMS API`);
@@ -195,6 +362,6 @@ app.listen(PORT, () => {
     console.log(`   Items   : ${db.metadata.total_items}`);
     console.log(`   Racks   : ${db.metadata.total_racks}`);
     console.log(`   Locators: ${Object.keys(db.locatorIndex).length}`);
-    console.log(`   Zones   : ${db.metadata.zones.map(z => z.name).join(', ')}\n`);
+    console.log(`   Zones   : ${db.metadata.zones.map(z => z.name).join(', ')}`);
+    console.log(`   Ticket  : Upload + batch-locate enabled\n`);
 });
-

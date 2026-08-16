@@ -13,7 +13,7 @@ import {
   getRackCols, getRackWorldPosition, getBinRackWorldPosition, getCabinetWorldPosition, getChemicalWorldPosition,
   getRackType,
   WAREHOUSE_W, WAREHOUSE_D,
-  ENTRY_POINTS, getClosestEntryPoint, Z_OFFSETS
+  ENTRY_POINTS, getClosestEntryPoint, Z_OFFSETS, GANGWAY_Z
 } from '../lib/warehouseLayout';
 
 /* ─────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ function Floor() {
   return (
     <group>
       {/* Main concrete floor */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[cx, -0.02, cz]} receiveShadow>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[cx, -0.02, cz]}>
         <planeGeometry args={[WAREHOUSE_W + 16, WAREHOUSE_D + 16]} />
         <meshStandardMaterial map={concrete} roughness={0.92} metalness={0.02} />
       </mesh>
@@ -198,24 +198,83 @@ const DECK_H = 0.025;
 const ROW_GAP = 5.0;
 
 /* ─────────────────────────────────────────────────────
+   TARGET BEACON (giant vertical laser for high visibility)
+───────────────────────────────────────────────────── */
+function TargetBeacon({ position, color }) {
+  const laserRef = useRef();
+  const ringRef = useRef();
+  const diamondRef = useRef();
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    if (laserRef.current) {
+      laserRef.current.material.opacity = 0.5 + Math.sin(t * 4) * 0.25;
+    }
+    if (ringRef.current) {
+      const s = 1.0 + Math.sin(t * 3) * 0.3;
+      ringRef.current.scale.set(s, 1, s);
+      ringRef.current.material.opacity = 0.6 + Math.sin(t * 3) * 0.2;
+    }
+    if (diamondRef.current) {
+      diamondRef.current.rotation.y += 0.03;
+      diamondRef.current.position.y = 4.0 + Math.sin(t * 2) * 0.4;
+    }
+  });
+  return (
+    <group position={position}>
+      {/* Pulsing ground ring */}
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+        <ringGeometry args={[0.8, 1.4, 32]} />
+        <meshStandardMaterial color={color} emissive={new THREE.Color(color)} emissiveIntensity={2} transparent opacity={0.7} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+      {/* Intense vertical laser beam */}
+      <mesh ref={laserRef} position={[0, 10, 0]}>
+        <cylinderGeometry args={[0.35, 0.35, 20, 16]} />
+        <meshBasicMaterial color={color} transparent opacity={0.7} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      {/* Floating spinning diamond pointer */}
+      <mesh ref={diamondRef} position={[0, 4.0, 0]}>
+        <octahedronGeometry args={[0.7]} />
+        <meshStandardMaterial color={color} emissive={new THREE.Color(color)} emissiveIntensity={3} />
+      </mesh>
+      {/* Point light to illuminate the destination area */}
+      <pointLight position={[0, 5, 0]} color={color} intensity={4} distance={15} />
+    </group>
+  );
+}
+
+/* ─────────────────────────────────────────────────────
+   TARGET AURA (glowing box around target rack)
+───────────────────────────────────────────────────── */
+function TargetAura({ color, width, height, depth }) {
+  const glowRef = useRef();
+  useFrame(({ clock }) => {
+    if (!glowRef.current) return;
+    const pulse = Math.sin(clock.getElapsedTime() * 3.5) * 0.5 + 0.5;
+    glowRef.current.material.opacity = 0.05 + pulse * 0.22;
+    const s = 1 + pulse * 0.03;
+    glowRef.current.scale.set(s, s, s);
+  });
+  return (
+    <>
+      <mesh ref={glowRef} position={[0, height / 2, 0]}>
+        <boxGeometry args={[width + 0.4, height + 0.4, depth + 0.4]} />
+        <meshStandardMaterial color={color} transparent opacity={0.1} side={THREE.BackSide} depthWrite={false} />
+      </mesh>
+      <TargetBeacon position={[0, 0, 0]} color={color} />
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────
    PALLET RACK UNIT  (industrial orange rack)
 ───────────────────────────────────────────────────── */
-function PalletRackUnit({ row, col, isTarget, onClick }) {
-  const glowRef = useRef();
+const PalletRackUnit = React.memo(function PalletRackUnit({ row, col, isTarget, onClick }) {
   const pos = getRackWorldPosition(row, col);
   const cx  = pos.x + PALLET_RACK_W / 2;
   const rackId = `RACK-${row}${String(col + 1).padStart(2, '0')}`;
 
   const rowLabel = useMemo(() => makeLabel(row, '#d45400', '#fff', 64, 32), [row]);
   const colLabel = useMemo(() => makeLabel(String(col + 1).padStart(2, '0'), '#1e2c3a', '#f7c900', 64, 32), [col]);
-
-  useFrame(({ clock }) => {
-    if (!glowRef.current) return;
-    const pulse = Math.sin(clock.getElapsedTime() * 3.5) * 0.5 + 0.5;
-    glowRef.current.material.opacity = 0.05 + pulse * 0.2;
-    const s = 1 + pulse * 0.03;
-    glowRef.current.scale.set(s, s, s);
-  });
 
   const pCol  = isTarget ? C.postTarget  : C.postOrange;
   const bCol  = isTarget ? C.beamTarget  : C.beam;
@@ -233,7 +292,7 @@ function PalletRackUnit({ row, col, isTarget, onClick }) {
     >
       {/* 4 corner upright posts */}
       {[[-px, -pz], [px, -pz], [-px, pz], [px, pz]].map(([x, z], i) => (
-        <mesh key={i} position={[x, PALLET_RACK_H / 2, z]} castShadow>
+        <mesh key={i} position={[x, PALLET_RACK_H / 2, z]}>
           <boxGeometry args={[POST_W, PALLET_RACK_H, POST_D]} />
           <meshStandardMaterial color={pCol} roughness={0.4} metalness={0.75}
             emissive={isTarget ? new THREE.Color(C.postTarget) : new THREE.Color(0)}
@@ -304,34 +363,20 @@ function PalletRackUnit({ row, col, isTarget, onClick }) {
       )}
 
       {/* Glowing aura for target rack */}
-      {isTarget && (
-        <mesh ref={glowRef} position={[0, PALLET_RACK_H / 2, 0]}>
-          <boxGeometry args={[PALLET_RACK_W + 0.55, PALLET_RACK_H + 0.55, PALLET_RACK_D + 0.55]} />
-          <meshStandardMaterial color={GLOW_COLORS.PALLET} transparent opacity={0.1} side={THREE.BackSide} depthWrite={false} />
-        </mesh>
-      )}
+      {isTarget && <TargetAura color={GLOW_COLORS.PALLET} width={PALLET_RACK_W + 0.15} height={PALLET_RACK_H + 0.15} depth={PALLET_RACK_D + 0.15} />}
     </group>
   );
-}
+});
 
 /* ─────────────────────────────────────────────────────
    BLUE BIN RACK UNIT  (shorter rack with small blue bins)
 ───────────────────────────────────────────────────── */
-function BinRackUnit({ rackId, col, isTarget, onClick }) {
-  const glowRef = useRef();
+const BinRackUnit = React.memo(function BinRackUnit({ rackId, col, isTarget, onClick }) {
   const pos = getBinRackWorldPosition(rackId, col);
   const cx  = pos.x + BIN_RACK_W / 2;
   const unitId = `BIN-${rackId}${String(col + 1).padStart(2, '0')}`;
 
   const label = useMemo(() => makeLabel(`${rackId}`, '#2563eb', '#fff', 64, 32), [rackId]);
-
-  useFrame(({ clock }) => {
-    if (!glowRef.current) return;
-    const pulse = Math.sin(clock.getElapsedTime() * 3.5) * 0.5 + 0.5;
-    glowRef.current.material.opacity = 0.05 + pulse * 0.22;
-    const s = 1 + pulse * 0.03;
-    glowRef.current.scale.set(s, s, s);
-  });
 
   const frameCol = isTarget ? 0x60a5fa : C.binFrame;
   const binCol   = isTarget ? 0x93c5fd : C.binBlue;
@@ -359,22 +404,19 @@ function BinRackUnit({ rackId, col, isTarget, onClick }) {
         <meshStandardMaterial color={0x334155} roughness={0.9} metalness={0.1} />
       </mesh>
 
-      {/* Grid of blue bins */}
-      {Array.from({ length: BIN_LEVELS }, (_, row) =>
-        Array.from({ length: binCols }, (_, bc) => {
-          const bx = -BIN_RACK_W / 2 + 0.05 + bc * binW + binW / 2;
-          const by = row * binH + binH / 2 + 0.02;
-          return (
-            <mesh key={`${row}-${bc}`} position={[bx, by, 0.02]}>
-              <boxGeometry args={[binW * 0.88, binH * 0.82, BIN_RACK_D * 0.7]} />
-              <meshStandardMaterial color={binCol} roughness={0.6} metalness={0.15}
-                emissive={isTarget ? new THREE.Color(0x3b82f6) : new THREE.Color(0)}
-                emissiveIntensity={isTarget ? 0.35 : 0}
-              />
-            </mesh>
-          );
-        })
-      )}
+      {/* Optimized: Single wide blue shelves instead of 50 individual bins */}
+      {Array.from({ length: BIN_LEVELS }, (_, row) => {
+        const by = row * binH + binH / 2 + 0.02;
+        return (
+          <mesh key={row} position={[0, by, 0]}>
+            <boxGeometry args={[BIN_RACK_W * 0.95, binH * 0.82, BIN_RACK_D * 0.7]} />
+            <meshStandardMaterial color={binCol} roughness={0.6} metalness={0.15}
+              emissive={isTarget ? new THREE.Color(0x3b82f6) : new THREE.Color(0)}
+              emissiveIntensity={isTarget ? 0.2 : 0}
+            />
+          </mesh>
+        );
+      })}
 
       {/* Label on first column */}
       {col === 0 && (
@@ -385,34 +427,20 @@ function BinRackUnit({ rackId, col, isTarget, onClick }) {
       )}
 
       {/* Glowing aura */}
-      {isTarget && (
-        <mesh ref={glowRef} position={[0, BIN_RACK_H / 2, 0]}>
-          <boxGeometry args={[BIN_RACK_W + 0.4, BIN_RACK_H + 0.4, BIN_RACK_D + 0.4]} />
-          <meshStandardMaterial color={GLOW_COLORS.BLUE_BIN} transparent opacity={0.1} side={THREE.BackSide} depthWrite={false} />
-        </mesh>
-      )}
+      {isTarget && <TargetAura color={GLOW_COLORS.BLUE_BIN} width={BIN_RACK_W} height={BIN_RACK_H} depth={BIN_RACK_D} />}
     </group>
   );
-}
+});
 
 /* ─────────────────────────────────────────────────────
    CABINET UNIT  (enclosed box with door face)
 ───────────────────────────────────────────────────── */
-function CabinetUnit({ cabinetNum, isTarget, onClick }) {
-  const glowRef = useRef();
+const CabinetUnit = React.memo(function CabinetUnit({ cabinetNum, isTarget, onClick }) {
   const pos = getCabinetWorldPosition(cabinetNum);
   const cx  = pos.x + CABINET_W / 2;
   const unitId = `CAB-${cabinetNum}`;
 
   const doorLabel = useMemo(() => makeLabel(`C${cabinetNum}`, '#7c3aed', '#fff', 64, 32), [cabinetNum]);
-
-  useFrame(({ clock }) => {
-    if (!glowRef.current) return;
-    const pulse = Math.sin(clock.getElapsedTime() * 3.5) * 0.5 + 0.5;
-    glowRef.current.material.opacity = 0.05 + pulse * 0.22;
-    const s = 1 + pulse * 0.03;
-    glowRef.current.scale.set(s, s, s);
-  });
 
   const bodyCol = isTarget ? 0x9d6eff : C.cabBody;
   const doorCol = isTarget ? 0xc4b5fd : C.cabDoor;
@@ -449,30 +477,16 @@ function CabinetUnit({ cabinetNum, isTarget, onClick }) {
       </mesh>
 
       {/* Glowing aura */}
-      {isTarget && (
-        <mesh ref={glowRef} position={[0, CABINET_H / 2, 0]}>
-          <boxGeometry args={[CABINET_W + 0.35, CABINET_H + 0.35, CABINET_D + 0.35]} />
-          <meshStandardMaterial color={GLOW_COLORS.CABINET} transparent opacity={0.1} side={THREE.BackSide} depthWrite={false} />
-        </mesh>
-      )}
+      {isTarget && <TargetAura color={GLOW_COLORS.CABINET} width={CABINET_W} height={CABINET_H} depth={CABINET_D} />}
     </group>
   );
-}
+});
 
 /* ─────────────────────────────────────────────────────
    CHEMICAL CUPBOARD  (enclosed area with warning stripes)
 ───────────────────────────────────────────────────── */
-function ChemicalCupboard({ isTarget }) {
-  const glowRef = useRef();
+const ChemicalCupboard = React.memo(function ChemicalCupboard({ isTarget }) {
   const pos = getChemicalWorldPosition();
-
-  useFrame(({ clock }) => {
-    if (!glowRef.current) return;
-    const pulse = Math.sin(clock.getElapsedTime() * 3.5) * 0.5 + 0.5;
-    glowRef.current.material.opacity = 0.05 + pulse * 0.22;
-    const s = 1 + pulse * 0.03;
-    glowRef.current.scale.set(s, s, s);
-  });
 
   const chemW = 3.0;
   const chemD = 2.0;
@@ -534,15 +548,10 @@ function ChemicalCupboard({ isTarget }) {
       </mesh>
 
       {/* Glowing aura */}
-      {isTarget && (
-        <mesh ref={glowRef} position={[0, chemH / 2, 0]}>
-          <boxGeometry args={[chemW + 0.5, chemH + 0.5, chemD + 0.5]} />
-          <meshStandardMaterial color={GLOW_COLORS.CHEMICAL} transparent opacity={0.1} side={THREE.BackSide} depthWrite={false} />
-        </mesh>
-      )}
+      {isTarget && <TargetAura color={GLOW_COLORS.CHEMICAL} width={chemW + 0.2} height={chemH + 0.2} depth={chemD + 0.2} />}
     </group>
   );
-}
+});
 
 /* ─────────────────────────────────────────────────────
    CEILING STRUCTURE (overhead steel beams + light strips)
@@ -576,7 +585,7 @@ function CeilingStructure() {
             <boxGeometry args={[WAREHOUSE_W * 0.6, 0.06, 0.18]} />
             <meshStandardMaterial color={C.stripLight} emissive={new THREE.Color(0xfff8e0)} emissiveIntensity={1.2} />
           </mesh>
-          <pointLight position={[WAREHOUSE_W * 0.3, ceilH - 0.2, z]} intensity={0.5} distance={18} color={0xfff5d0} />
+          {/* Removed expensive pointLight per beam for performance */}
         </group>
       ))}
     </group>
@@ -676,16 +685,14 @@ function EntryBeacon({ position, isActive }) {
 ───────────────────────────────────────────────────── */
 const RIGHT_AISLE_X  = 72.0;
 const LEFT_AISLE_X   = 6.0;
-const FLOOR_Y        = 0.1;
+const FLOOR_Y        = 0.8;
 const SHELF_APPROACH = 0.8;
 
 function getAisleZ(rackLetter) {
-  const z = Z_OFFSETS[rackLetter] || 0;
-  const isBottom = ['B','E','G','I','K','N','P','R','T','V','X','Z'].includes(rackLetter);
-  return isBottom ? z + 1.25 : z - 1.25;
+  return GANGWAY_Z[rackLetter] || 0;
 }
 
-function computeRoute(targetProduct) {
+function computeRoute(targetProduct, entryId = 'ENTRY_1') {
   if (!targetProduct) return [];
 
   const loc = targetProduct.locations?.[0];
@@ -693,9 +700,13 @@ function computeRoute(targetProduct) {
 
   const rackType = getRackType(targetProduct.primary_rack);
   const pts = [];
+  
+  const entry = ENTRY_POINTS.find(ep => ep.id === entryId) || ENTRY_POINTS[0];
 
   if (rackType === 'PALLET') {
-    const rackLetter = loc.rack || targetProduct.primary_rack;
+    let rackLetter = loc.rack || targetProduct.primary_rack || 'A';
+    rackLetter = String(rackLetter).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'A';
+    
     const colNum = (loc.col_number || 1) - 1;
     const rp = getRackWorldPosition(rackLetter, colNum);
     const rack_x = rp.x;
@@ -704,10 +715,8 @@ function computeRoute(targetProduct) {
     const isBottom = ['B','E','G','I','K','N','P','R','T','V','X','Z'].includes(rackLetter);
     const face_z = isBottom ? rack_z + SHELF_APPROACH : rack_z - SHELF_APPROACH;
 
-    const closestEntry = getClosestEntryPoint(rack_z);
-
-    pts.push(new THREE.Vector3(closestEntry.x, FLOOR_Y, closestEntry.z));
-    pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, closestEntry.z));
+    pts.push(new THREE.Vector3(entry.x, FLOOR_Y, entry.z));
+    pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, entry.z));
     pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, aisle_z));
     pts.push(new THREE.Vector3(rack_x, FLOOR_Y, aisle_z));
     pts.push(new THREE.Vector3(rack_x, FLOOR_Y, face_z));
@@ -718,41 +727,37 @@ function computeRoute(targetProduct) {
     pts.push(new THREE.Vector3(rack_x, shelf_y, face_z));
 
   } else if (rackType === 'BLUE_BIN') {
-    const rackId = loc.rack || targetProduct.primary_rack;
+    let rackId = loc.rack || targetProduct.primary_rack || 'V';
+    if (!rackId.startsWith('AC')) {
+       rackId = String(rackId).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'V';
+    }
     const sectionIndex = parseInt(loc.rack_section || '01', 10) - 1;
     const rp = getBinRackWorldPosition(rackId, sectionIndex);
     const rack_x = rp.x;
     const rack_z = rp.z;
 
-    const closestEntry = getClosestEntryPoint(rack_z);
-    const isMezzanine = rp.y > 1.0;
+    // All V racks are now on the left wall — walk right gangway, cross horizontally, then down left wall
+    // Find the nearest horizontal gangway to cross the warehouse floor
+    const gangwayKeys = Object.keys(GANGWAY_Z);
+    let bestGangway = 'L';
+    let bestDist = Infinity;
+    gangwayKeys.forEach(k => {
+      const d = Math.abs(GANGWAY_Z[k] - rack_z);
+      if (d < bestDist) { bestDist = d; bestGangway = k; }
+    });
+    const crossZ = GANGWAY_Z[bestGangway];
 
-    pts.push(new THREE.Vector3(closestEntry.x, FLOOR_Y, closestEntry.z));
-    pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, closestEntry.z));
+    pts.push(new THREE.Vector3(entry.x, FLOOR_Y, entry.z));
+    pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, entry.z));
+    pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, crossZ));
+    pts.push(new THREE.Vector3(LEFT_AISLE_X, FLOOR_Y, crossZ));
+    pts.push(new THREE.Vector3(LEFT_AISLE_X, FLOOR_Y, rack_z));
+    pts.push(new THREE.Vector3(rack_x + SHELF_APPROACH, FLOOR_Y, rack_z));
 
-    if (isMezzanine) {
-      // Route up mezzanine ramp
-      pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, 15.0));
-      pts.push(new THREE.Vector3(18.0, FLOOR_Y, 15.0));
-      pts.push(new THREE.Vector3(10.0, 3.2, 8.8));
-      pts.push(new THREE.Vector3(rack_x, 3.2, rack_z + BIN_RACK_D + SHELF_APPROACH));
-
-      const binMatch = loc.bin?.match(/B(\d+)/i);
-      const binLevel = binMatch ? parseInt(binMatch[1], 10) : 1;
-      const bin_y = 3.2 + (binLevel - 1) * (BIN_RACK_H / BIN_LEVELS) + (BIN_RACK_H / BIN_LEVELS) * 0.5;
-      pts.push(new THREE.Vector3(rack_x, bin_y, rack_z + BIN_RACK_D + SHELF_APPROACH));
-    } else {
-      // Left vertical V-racks
-      pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, rack_z));
-      pts.push(new THREE.Vector3(LEFT_AISLE_X, FLOOR_Y, rack_z));
-      pts.push(new THREE.Vector3(rack_x, FLOOR_Y, rack_z));
-      pts.push(new THREE.Vector3(rack_x, FLOOR_Y, rack_z + BIN_RACK_D + SHELF_APPROACH));
-
-      const binMatch = loc.bin?.match(/B(\d+)/i);
-      const binLevel = binMatch ? parseInt(binMatch[1], 10) : 1;
-      const bin_y = (binLevel - 1) * (BIN_RACK_H / BIN_LEVELS) + (BIN_RACK_H / BIN_LEVELS) * 0.5;
-      pts.push(new THREE.Vector3(rack_x, bin_y, rack_z + BIN_RACK_D + SHELF_APPROACH));
-    }
+    const binMatch = loc.bin?.match(/B(\d+)/i);
+    const binLevel = binMatch ? parseInt(binMatch[1], 10) : 1;
+    const bin_y = (binLevel - 1) * (BIN_RACK_H / BIN_LEVELS) + (BIN_RACK_H / BIN_LEVELS) * 0.5;
+    pts.push(new THREE.Vector3(rack_x + SHELF_APPROACH, Math.max(bin_y, 0.3), rack_z));
 
   } else if (rackType === 'CABINET') {
     const numMatch = targetProduct.primary_rack?.match(/(\d+)/);
@@ -761,26 +766,31 @@ function computeRoute(targetProduct) {
     const cab_x = rp.x;
     const cab_z = rp.z;
 
-    const closestEntry = getClosestEntryPoint(cab_z);
-
-    pts.push(new THREE.Vector3(closestEntry.x, FLOOR_Y, closestEntry.z));
-    pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, closestEntry.z));
+    pts.push(new THREE.Vector3(entry.x, FLOOR_Y, entry.z));
+    pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, entry.z));
     pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, cab_z));
     pts.push(new THREE.Vector3(cab_x - CABINET_W - SHELF_APPROACH, FLOOR_Y, cab_z));
     pts.push(new THREE.Vector3(cab_x - CABINET_W - SHELF_APPROACH, CABINET_H * 0.5, cab_z));
 
   } else if (rackType === 'CHEMICAL') {
     const rp = getChemicalWorldPosition();
-    const closestEntry = getClosestEntryPoint(rp.z);
-    pts.push(new THREE.Vector3(closestEntry.x, FLOOR_Y, closestEntry.z));
-    pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, closestEntry.z));
+    pts.push(new THREE.Vector3(entry.x, FLOOR_Y, entry.z));
+    pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, entry.z));
     pts.push(new THREE.Vector3(RIGHT_AISLE_X, FLOOR_Y, rp.z));
     pts.push(new THREE.Vector3(LEFT_AISLE_X, FLOOR_Y, rp.z));
     pts.push(new THREE.Vector3(rp.x + 1.5, FLOOR_Y, rp.z));
     pts.push(new THREE.Vector3(rp.x + 1.5, FLOOR_Y, rp.z + 1.0));
   }
 
-  return pts;
+  // Filter out any consecutive duplicate points to prevent CatmullRomCurve3 from crashing
+  const filteredPts = [];
+  for (let i = 0; i < pts.length; i++) {
+    if (i === 0 || pts[i].distanceTo(pts[i - 1]) > 0.01) {
+      filteredPts.push(pts[i]);
+    }
+  }
+
+  return filteredPts;
 }
 
 /* ─────────────────────────────────────────────────────
@@ -790,13 +800,13 @@ const RED_PATH   = new THREE.Color(0xee1111);
 const RED_BRIGHT = new THREE.Color(0xff4444);
 const RED_DARK   = new THREE.Color(0xcc0000);
 
-function NavPath({ targetProduct }) {
+function NavPath({ targetProduct, entryPoint }) {
   const [progress, setProgress] = useState(0);
   const rafRef = useRef(null);
 
   const waypoints = useMemo(
-    () => computeRoute(targetProduct),
-    [targetProduct]
+    () => computeRoute(targetProduct, entryPoint),
+    [targetProduct, entryPoint]
   );
 
   const drawn = useMemo(() => {
@@ -815,7 +825,7 @@ function NavPath({ targetProduct }) {
     const curve    = new THREE.CatmullRomCurve3(drawn, false, 'catmullrom', 0.05);
     const pts      = curve.getPoints(120);
     const lineGeo  = new THREE.BufferGeometry().setFromPoints(pts);
-    const tubeGeo  = new THREE.TubeGeometry(curve, 120, 0.07, 12, false);
+    const tubeGeo  = new THREE.TubeGeometry(curve, 120, 0.15, 12, false);
     const head     = drawn[drawn.length - 1];
 
     const arrowSegs = [];
@@ -899,18 +909,25 @@ function BounceDot({ position }) {
 
 function ArrivalMarker({ targetProduct }) {
   const ref = useRef();
+  const labelRef = useRef();
   const arrivalPos = useMemo(() => {
     if (!targetProduct) return null;
     const loc = targetProduct.locations?.[0];
     const rackType = getRackType(targetProduct.primary_rack);
 
     if (rackType === 'PALLET') {
+      let rackLetter = loc?.rack || targetProduct.primary_rack || 'A';
+      rackLetter = String(rackLetter).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'A';
       const col = (loc?.col_number || 1) - 1;
-      const rp = getRackWorldPosition(loc?.rack || targetProduct.primary_rack, col);
+      const rp = getRackWorldPosition(rackLetter, col);
       return { x: rp.x + PALLET_RACK_W / 2, z: rp.z };
     } else if (rackType === 'BLUE_BIN') {
+      let rackId = loc?.rack || targetProduct.primary_rack || 'V';
+      if (!rackId.startsWith('AC')) {
+        rackId = String(rackId).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'V';
+      }
       const section = parseInt(loc?.rack_section || '01', 10) - 1;
-      const rp = getBinRackWorldPosition(loc?.rack || targetProduct.primary_rack, section);
+      const rp = getBinRackWorldPosition(rackId, section);
       return { x: rp.x + BIN_RACK_W / 2, z: rp.z };
     } else if (rackType === 'CABINET') {
       const numMatch = targetProduct.primary_rack?.match(/(\d+)/);
@@ -924,21 +941,39 @@ function ArrivalMarker({ targetProduct }) {
   }, [targetProduct]);
 
   useFrame(({ clock }) => {
-    if (!ref.current) return;
     const t = clock.getElapsedTime();
-    const s = 1 + Math.sin(t * 4) * 0.22;
-    ref.current.scale.set(s, 1, s);
-    ref.current.material.opacity = 0.55 + Math.sin(t * 4) * 0.2;
+    if (ref.current) {
+      const s = 1 + Math.sin(t * 4) * 0.3;
+      ref.current.scale.set(s, 1, s);
+      ref.current.material.opacity = 0.65 + Math.sin(t * 4) * 0.2;
+    }
+    if (labelRef.current) {
+      labelRef.current.position.y = 6.5 + Math.sin(t * 1.5) * 0.3;
+    }
   });
+
+  const destLabel = useMemo(() => {
+    if (!targetProduct) return null;
+    return makeLabel(`📍 ${targetProduct.primary_locator_name || 'DESTINATION'}`, '#dc2626', '#fff', 256, 48);
+  }, [targetProduct]);
 
   if (!arrivalPos) return null;
 
   return (
-    <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[arrivalPos.x, 0.05, arrivalPos.z]}>
-      <ringGeometry args={[0.55, 0.85, 40]} />
-      <meshStandardMaterial color={RED_PATH} emissive={RED_BRIGHT} emissiveIntensity={2}
-        transparent opacity={0.65} side={THREE.DoubleSide} />
-    </mesh>
+    <group>
+      {/* Pulsing ground ring */}
+      <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[arrivalPos.x, 0.05, arrivalPos.z]}>
+        <ringGeometry args={[0.7, 1.2, 40]} />
+        <meshStandardMaterial color={RED_PATH} emissive={RED_BRIGHT} emissiveIntensity={3}
+          transparent opacity={0.7} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Floating destination label */}
+      {destLabel && (
+        <sprite ref={labelRef} position={[arrivalPos.x, 6.5, arrivalPos.z]} scale={[6, 1.2, 1]}>
+          <spriteMaterial map={destLabel} transparent depthTest={false} />
+        </sprite>
+      )}
+    </group>
   );
 }
 
@@ -965,14 +1000,20 @@ function CameraFlyTo({ targetProduct }) {
     let tx, ty, tz;
 
     if (rackType === 'PALLET') {
+      let rackLetter = loc?.rack || targetProduct.primary_rack || 'A';
+      rackLetter = String(rackLetter).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'A';
       const col = (loc?.col_number || 1) - 1;
-      const rp = getRackWorldPosition(loc?.rack || targetProduct.primary_rack, col);
+      const rp = getRackWorldPosition(rackLetter, col);
       tx = rp.x;
       ty = PALLET_RACK_H / 2;
       tz = rp.z;
     } else if (rackType === 'BLUE_BIN') {
+      let rackId = loc?.rack || targetProduct.primary_rack || 'V';
+      if (!rackId.startsWith('AC')) {
+        rackId = String(rackId).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'V';
+      }
       const section = parseInt(loc?.rack_section || '01', 10) - 1;
-      const rp = getBinRackWorldPosition(loc?.rack || targetProduct.primary_rack, section);
+      const rp = getBinRackWorldPosition(rackId, section);
       tx = rp.x;
       ty = rp.y + BIN_RACK_H / 2;
       tz = rp.z;
@@ -1032,11 +1073,15 @@ function resolveTargetInfo(targetProduct) {
   const loc = targetProduct.locations?.[0];
 
   if (rackType === 'PALLET') {
-    const rackLetter = loc?.rack || targetProduct.primary_rack;
+    let rackLetter = loc?.rack || targetProduct.primary_rack || 'A';
+    rackLetter = String(rackLetter).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'A';
     const col = (loc?.col_number || 1) - 1;
     return { type: 'PALLET', rackLetter, col };
   } else if (rackType === 'BLUE_BIN') {
-    const rackId = loc?.rack || targetProduct.primary_rack;
+    let rackId = loc?.rack || targetProduct.primary_rack || 'V';
+    if (!rackId.startsWith('AC')) {
+       rackId = String(rackId).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'V';
+    }
     const section = parseInt(loc?.rack_section || '01', 10) - 1;
     return { type: 'BLUE_BIN', rackId, col: section };
   } else if (rackType === 'CABINET') {
@@ -1051,40 +1096,60 @@ function resolveTargetInfo(targetProduct) {
 }
 
 /* ─────────────────────────────────────────────────────
-   FULL SCENE
+   MULTI-TARGET RESOLVER — build lookup sets for batch highlighting
 ───────────────────────────────────────────────────── */
-function Scene({ targetProduct, onRackClick }) {
+function resolveMultiTargets(products) {
+  if (!products || products.length === 0) return null;
+  const palletTargets = new Set();
+  const binTargets = new Set();
+  const cabinetTargets = new Set();
+  let hasChemical = false;
+
+  products.forEach(p => {
+    const info = resolveTargetInfo(p);
+    if (!info.type) return;
+    if (info.type === 'PALLET') palletTargets.add(`${info.rackLetter}-${info.col}`);
+    else if (info.type === 'BLUE_BIN') binTargets.add(`${info.rackId}-${info.col}`);
+    else if (info.type === 'CABINET') cabinetTargets.add(info.cabinetNum);
+    else if (info.type === 'CHEMICAL') hasChemical = true;
+  });
+
+  return { palletTargets, binTargets, cabinetTargets, hasChemical };
+}
+
+/* ─────────────────────────────────────────────────────
+   FULL SCENE — supports both single and multi-target highlighting
+───────────────────────────────────────────────────── */
+function Scene({ targetProduct, targetProducts, onRackClick, entryPoint }) {
   const target = useMemo(() => resolveTargetInfo(targetProduct), [targetProduct]);
+  const multiTargets = useMemo(() => resolveMultiTargets(targetProducts), [targetProducts]);
   
-  // Find which entry beacon is active for the current target product route
-  const activeEntryId = useMemo(() => {
-    if (!targetProduct) return 'ENTRY_1';
-    const loc = targetProduct.locations?.[0];
-    const rackType = getRackType(targetProduct.primary_rack);
-    let tz = 0;
-    if (rackType === 'PALLET') {
-      tz = Z_OFFSETS[loc?.rack || targetProduct.primary_rack] || 0;
-    } else if (rackType === 'BLUE_BIN') {
-      const section = parseInt(loc?.rack_section || '01', 10) - 1;
-      tz = getBinRackWorldPosition(loc?.rack || targetProduct.primary_rack, section).z;
-    } else if (rackType === 'CABINET') {
-      const numMatch = targetProduct.primary_rack?.match(/(\d+)/);
-      tz = getCabinetWorldPosition(numMatch ? parseInt(numMatch[1], 10) : 1).z;
-    } else {
-      tz = getChemicalWorldPosition().z;
-    }
-    return getClosestEntryPoint(tz).id;
-  }, [targetProduct]);
+  const activeEntryId = entryPoint || 'ENTRY_1';
+
+  // Helper: check if a rack is targeted (single OR multi mode)
+  const isPalletTarget = (row, col) => {
+    if (target.type === 'PALLET' && target.rackLetter === row && target.col === col) return true;
+    if (multiTargets?.palletTargets?.has(`${row}-${col}`)) return true;
+    return false;
+  };
+  const isBinTarget = (rackId, col) => {
+    if (target.type === 'BLUE_BIN' && target.rackId === rackId && target.col === col) return true;
+    if (multiTargets?.binTargets?.has(`${rackId}-${col}`)) return true;
+    return false;
+  };
+  const isCabinetTarget = (num) => {
+    if (target.type === 'CABINET' && target.cabinetNum === num) return true;
+    if (multiTargets?.cabinetTargets?.has(num)) return true;
+    return false;
+  };
+  const isChemTarget = target.type === 'CHEMICAL' || (multiTargets?.hasChemical ?? false);
 
   return (
     <>
       {/* Lighting rig */}
       <ambientLight intensity={0.55} color={0xd0dce8} />
       <directionalLight
-        position={[30, 40, 30]} intensity={1.1} castShadow
-        shadow-mapSize-width={2048} shadow-mapSize-height={2048}
-        shadow-camera-far={200} shadow-camera-left={-60}
-        shadow-camera-right={80} shadow-camera-top={60} shadow-camera-bottom={-60}
+        position={[30, 40, 30]} intensity={1.1}
       />
       <hemisphereLight skyColor={0xd5e8f5} groundColor={0xa8b8c8} intensity={0.6} />
       {/* Overhead fill lights */}
@@ -1112,7 +1177,7 @@ function Scene({ targetProduct, onRackClick }) {
           <PalletRackUnit
             key={`P-${row}-${c}`}
             row={row} col={c}
-            isTarget={target.type === 'PALLET' && target.rackLetter === row && target.col === c}
+            isTarget={isPalletTarget(row, c)}
             onClick={onRackClick}
           />
         ));
@@ -1124,7 +1189,7 @@ function Scene({ targetProduct, onRackClick }) {
           <BinRackUnit
             key={`B-${rack.id}-${c}`}
             rackId={rack.id} col={c}
-            isTarget={target.type === 'BLUE_BIN' && target.rackId === rack.id && target.col === c}
+            isTarget={isBinTarget(rack.id, c)}
             onClick={onRackClick}
           />
         ))
@@ -1135,16 +1200,16 @@ function Scene({ targetProduct, onRackClick }) {
         <CabinetUnit
           key={`C-${num}`}
           cabinetNum={num}
-          isTarget={target.type === 'CABINET' && target.cabinetNum === num}
+          isTarget={isCabinetTarget(num)}
           onClick={onRackClick}
         />
       ))}
 
       {/* ── CHEMICAL CUPBOARD ── */}
-      <ChemicalCupboard isTarget={target.type === 'CHEMICAL'} />
+      <ChemicalCupboard isTarget={isChemTarget} />
 
-      {/* Navigation path */}
-      {targetProduct && <NavPath key={JSON.stringify(targetProduct?.locations?.[0])} targetProduct={targetProduct} />}
+      {/* Navigation path (single selected item only) */}
+      {targetProduct && <NavPath key={`${JSON.stringify(targetProduct?.locations?.[0])}-${activeEntryId}`} targetProduct={targetProduct} entryPoint={activeEntryId} />}
       <CameraFlyTo targetProduct={targetProduct} />
 
       <OrbitControls
@@ -1158,19 +1223,18 @@ function Scene({ targetProduct, onRackClick }) {
 }
 
 /* ─────────────────────────────────────────────────────
-   EXPORT
+   EXPORT — accepts targetProducts array for multi-highlight
 ───────────────────────────────────────────────────── */
-export default function Warehouse3D({ targetProduct, onRackClick, onLoaded }) {
+export default function Warehouse3D({ targetProduct, targetProducts, onRackClick, onLoaded, entryPoint }) {
   return (
     <CanvasErrorBoundary>
       <Canvas
-        shadows
         camera={{ position: [WAREHOUSE_W * 0.5, 28, WAREHOUSE_D * 0.8], fov: 48, near: 0.1, far: 350 }}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1 }}
         style={{ background: '#c8d8e8', width: '100%', height: '100%' }}
         onCreated={() => onLoaded?.()}
       >
-        <Scene targetProduct={targetProduct} onRackClick={onRackClick} />
+        <Scene targetProduct={targetProduct} targetProducts={targetProducts} onRackClick={onRackClick} entryPoint={entryPoint} />
       </Canvas>
     </CanvasErrorBoundary>
   );

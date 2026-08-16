@@ -217,24 +217,30 @@ function generateRouteDescription(locatorName, rack, locatorType, entryPoint) {
   steps.push({ icon: '➡️', text: `Walk along the right-side gangway`, detail: 'Follow the main corridor' });
 
   if (zone === 'Pallet') {
-    const rowLetter = parsed.rack || rack;
+    let rowLetter = parsed.rack || rack || 'A';
+    rowLetter = String(rowLetter).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'A';
     const section = parsed.rack_section || '01';
     const col = parsed.col_number || 1;
     const bin = parsed.bin || 'B1';
-    steps.push({ icon: '⬅️', text: `Turn left into Row ${rowLetter}`, detail: `Pallet rack row ${rowLetter}` });
+    steps.push({ icon: '⬅️', text: `Turn left into Gangway ${rowLetter}`, detail: `Walk down the corridor for row ${rowLetter}` });
     steps.push({ icon: '🔢', text: `Walk to Section ${section}, Column ${String(col).padStart(2, '0')}`, detail: `Count columns from the aisle end` });
     steps.push({ icon: '📦', text: `Locate Bin ${bin}`, detail: `Look at shelf level ${bin.replace(/[^0-9]/g, '') || '1'}` });
   } else if (zone === 'Blue Bin') {
-    const rackId = rack || 'V';
+    let rackId = rack || 'V';
+    if (!rackId.startsWith('AC')) {
+       rackId = String(rackId).replace(/[^a-zA-Z]/g, '').toUpperCase().charAt(0) || 'V';
+    }
     const section = parsed.rack_section || '01';
     const bin = parsed.bin || 'B1';
-    const sectionNum = parseInt(section, 10);
-    if (sectionNum >= 29 && sectionNum <= 42) {
-      steps.push({ icon: '⬅️', text: `Go to the left wall V-rack area`, detail: `Blue Bin racks V29-V42` });
+    
+    if (rackId.startsWith('AC')) {
+      steps.push({ icon: '⬆️', text: `Go to the mezzanine level`, detail: `Take the stairs/ramp to the upper platform on the right` });
+      steps.push({ icon: '🔵', text: `Find rack ${rackId}, Section ${section}`, detail: `Blue Bin rack on mezzanine` });
     } else {
-      steps.push({ icon: '⬆️', text: `Go to the mezzanine level`, detail: `Take the stairs/ramp to the upper platform` });
+      steps.push({ icon: '⬅️', text: `Walk across the warehouse to the left wall`, detail: `Use the central gangway to cross the floor` });
+      steps.push({ icon: '⬆️', text: `Walk along the left-wall gangway`, detail: `Find V-rack section ${section}` });
+      steps.push({ icon: '🔵', text: `Find rack V, Section ${section}`, detail: `Blue Bin rack against the left wall` });
     }
-    steps.push({ icon: '🔵', text: `Find rack ${rackId}, Section ${section}`, detail: `Blue Bin rack` });
     steps.push({ icon: '📦', text: `Locate Bin ${bin}`, detail: `Check bin compartment` });
   } else if (zone === 'Cabinet') {
     const cabNum = (rack || '').replace(/cabinet\s*/i, '');

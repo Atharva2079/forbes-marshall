@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { MapPin, Navigation2, Warehouse, DoorOpen } from 'lucide-react';
-import SearchBar   from './components/SearchBar';
-import ProductList from './components/ProductList';
-import ProductPanel from './components/ProductPanel';
-import StatsBar    from './components/StatsBar';
-import Warehouse3D from './components/Warehouse3D';
+import { MapPin, Navigation2, Warehouse, DoorOpen, FileText, Search } from 'lucide-react';
+import SearchBar       from './components/SearchBar';
+import ProductList     from './components/ProductList';
+import ProductPanel    from './components/ProductPanel';
+import StatsBar        from './components/StatsBar';
+import Warehouse3D     from './components/Warehouse3D';
+import TicketUploader  from './components/TicketUploader';
+import TicketResultsPanel from './components/TicketResultsPanel';
 
 /* ── Zone legend config ──────────────────────────────── */
 const ZONE_LEGEND = [
@@ -26,6 +28,13 @@ export default function App() {
   const [entryPoint, setEntryPoint] = useState('ENTRY_1');
   const [routeData, setRouteData] = useState(null);
 
+  // ── Ticket Mode State ──
+  const [ticketMode, setTicketMode] = useState(false);
+  const [ticketData, setTicketData] = useState(null);
+  const [ticketProducts, setTicketProducts] = useState([]);
+  const [ticketPanelOpen, setTicketPanelOpen] = useState(false);
+
+  // ── Single-item selection ──
   const handleProductLocated = (product) => {
     if (!product) { setSelectedProduct(null); setPanelOpen(false); setRouteData(null); return; }
     setSelectedProduct(product);
@@ -43,15 +52,77 @@ export default function App() {
     }
   };
 
-  const handleRackClick = (rackId, row, col) => {
+  const handleRackClick = React.useCallback((rackId, row, col) => {
     if (selectedProduct?.primary_rack === rackId) {
       setPanelOpen(true);
     }
-  };
+  }, [selectedProduct]);
 
   const handleSearchSelect = (product) => {
+    // Exit ticket mode when selecting a single item
+    if (ticketMode && !ticketPanelOpen) {
+      setTicketMode(false);
+      setTicketData(null);
+      setTicketProducts([]);
+    }
     handleProductLocated(product);
   };
+
+  // ── Ticket Mode Handlers ──
+  const handleTicketResults = (data) => {
+    setTicketData(data);
+    setTicketProducts(data.results || []);
+    setTicketPanelOpen(true);
+    // Clear single-item selection
+    setSelectedProduct(null);
+    setPanelOpen(false);
+    setRouteData(null);
+  };
+
+  const handleTicketItemSelect = (product) => {
+    // Highlight a single item from ticket results in the 3D view
+    setSelectedProduct(product);
+    setPanelOpen(false); // Don't show single-item panel, keep ticket panel
+
+    // Fetch route
+    const locName = product.primary_locator_name || product.locations?.[0]?.locator_name;
+    if (locName) {
+      fetch(`/api/locate/${encodeURIComponent(locName)}?entry=${entryPoint}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.route) setRouteData(data.route);
+        })
+        .catch(() => {});
+    }
+  };
+
+  const handleCloseTicket = () => {
+    setTicketPanelOpen(false);
+    setTicketData(null);
+    setTicketProducts([]);
+    setSelectedProduct(null);
+    setRouteData(null);
+  };
+
+  const toggleTicketMode = () => {
+    const newMode = !ticketMode;
+    setTicketMode(newMode);
+    if (!newMode) {
+      // Exiting ticket mode — clear ticket data
+      setTicketData(null);
+      setTicketProducts([]);
+      setTicketPanelOpen(false);
+      setSelectedProduct(null);
+      setRouteData(null);
+    }
+  };
+
+  // Determine the active badge display
+  const activeTargetLabel = ticketPanelOpen && ticketProducts.length > 0
+    ? `${ticketProducts.length} items from ${ticketData?.ticketNo || 'ticket'}`
+    : selectedProduct
+      ? `${selectedProduct.item_code} → ${selectedProduct.primary_locator_name}`
+      : null;
 
   return (
     <div className="app-layout">
@@ -123,24 +194,55 @@ export default function App() {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="sidebar-section">
-          <div className="sidebar-section-title">
-            <Navigation2 size={9} style={{ display: 'inline', marginRight: 4 }} />
-            Locator / Item Code Search
+        {/* Mode Toggle: Single Search vs Ticket Mode */}
+        <div className="sidebar-section" style={{ paddingBottom: 8 }}>
+          <div className="mode-toggle">
+            <button
+              className={`mode-toggle-btn ${!ticketMode ? 'active' : ''}`}
+              onClick={() => ticketMode && toggleTicketMode()}
+            >
+              <Search size={11} />
+              Single Search
+            </button>
+            <button
+              className={`mode-toggle-btn ${ticketMode ? 'active' : ''}`}
+              onClick={() => !ticketMode && toggleTicketMode()}
+            >
+              <FileText size={11} />
+              Ticket Mode
+            </button>
           </div>
-          <SearchBar onSelect={handleSearchSelect} selectedItemCode={selectedProduct?.item_code} />
         </div>
 
-        {/* Product List */}
-        <div className="sidebar-section-title" style={{ padding: '8px 12px 0', margin: 0 }}>
-          <Warehouse size={9} style={{ display: 'inline', marginRight: 4 }} />
-          Inventory Directory
-        </div>
-        <ProductList
-          selectedItemCode={selectedProduct?.item_code}
-          onSelect={handleSearchSelect}
-        />
+        {/* Search / Ticket Uploader */}
+        {!ticketMode ? (
+          <>
+            <div className="sidebar-section">
+              <div className="sidebar-section-title">
+                <Navigation2 size={9} style={{ display: 'inline', marginRight: 4 }} />
+                Locator / Item Code Search
+              </div>
+              <SearchBar onSelect={handleSearchSelect} selectedItemCode={selectedProduct?.item_code} />
+            </div>
+
+            {/* Product List */}
+            <div className="sidebar-section-title" style={{ padding: '8px 12px 0', margin: 0 }}>
+              <Warehouse size={9} style={{ display: 'inline', marginRight: 4 }} />
+              Inventory Directory
+            </div>
+            <ProductList
+              selectedItemCode={selectedProduct?.item_code}
+              onSelect={handleSearchSelect}
+            />
+          </>
+        ) : (
+          <div className="sidebar-section" style={{ flex: 1, overflow: 'auto', padding: 0 }}>
+            <TicketUploader
+              onResults={handleTicketResults}
+              onClose={() => toggleTicketMode()}
+            />
+          </div>
+        )}
       </aside>
 
       {/* ═══ MAIN 3D VIEW ═══ */}
@@ -149,33 +251,45 @@ export default function App() {
         <div className="view-toolbar">
           <div className="view-toolbar-left">
             <span className="view-label">3D Warehouse View</span>
-            {selectedProduct && (
+            {activeTargetLabel && (
               <div className="target-badge">
                 <MapPin size={10} />
-                {selectedProduct.item_code} → {selectedProduct.primary_locator_name}
+                {activeTargetLabel}
               </div>
             )}
           </div>
-          {selectedProduct && (
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => setPanelOpen(v => !v)}
-            >
-              {panelOpen ? 'Hide' : 'Show'} Details
-            </button>
-          )}
+          <div style={{ display: 'flex', gap: 6 }}>
+            {ticketPanelOpen && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setTicketPanelOpen(v => !v)}
+              >
+                {ticketPanelOpen ? 'Hide' : 'Show'} Ticket
+              </button>
+            )}
+            {selectedProduct && !ticketPanelOpen && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setPanelOpen(v => !v)}
+              >
+                {panelOpen ? 'Hide' : 'Show'} Details
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Canvas */}
         <div className="canvas-wrapper">
           <Warehouse3D
             targetProduct={selectedProduct}
+            targetProducts={ticketPanelOpen ? ticketProducts : []}
             onRackClick={handleRackClick}
             onLoaded={() => setScene3dLoaded(true)}
+            entryPoint={entryPoint}
           />
 
           {/* Empty state overlay */}
-          {!selectedProduct && scene3dLoaded && (
+          {!selectedProduct && !ticketPanelOpen && scene3dLoaded && (
             <div style={{
               position: 'absolute', inset: 0, display: 'flex',
               flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -183,7 +297,7 @@ export default function App() {
             }}>
               <Warehouse size={56} style={{ color: '#0060b0', opacity: 0.3 }} />
               <div style={{ fontSize: 13, color: '#4a6280', fontFamily: 'var(--font-mono)' }}>
-                Enter a locator code (e.g., A01-A01-B1) or search by item code
+                Enter a locator code or upload a ticket to locate items
               </div>
             </div>
           )}
@@ -197,12 +311,22 @@ export default function App() {
           </div>
         </div>
 
-        {/* Product Panel */}
-        {panelOpen && selectedProduct && (
+        {/* Product Panel (single item mode) */}
+        {panelOpen && selectedProduct && !ticketPanelOpen && (
           <ProductPanel
             product={selectedProduct}
             routeData={routeData}
             onClose={() => setPanelOpen(false)}
+          />
+        )}
+
+        {/* Ticket Results Panel (ticket mode) */}
+        {ticketPanelOpen && ticketData && (
+          <TicketResultsPanel
+            ticketData={ticketData}
+            onSelectItem={handleTicketItemSelect}
+            activeItemCode={selectedProduct?.item_code}
+            onClose={handleCloseTicket}
           />
         )}
       </main>

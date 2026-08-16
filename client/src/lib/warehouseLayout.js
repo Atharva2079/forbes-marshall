@@ -18,7 +18,7 @@ export const RACK_TYPES = {
    PALLET RACK DEFINITIONS (A to Z)
  ───────────────────────────────────────────────────── */
 export const PALLET_ROWS = [
-  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y'
 ];
 
 /**
@@ -75,22 +75,41 @@ export const CABINET_H = 1.9;
 export const WAREHOUSE_W = 82;
 export const WAREHOUSE_D = 98;
 
-// Z positioning mapping for rows A-Z based on double-row aisles
+// Z positioning mapping based on PDF gangways
+// Pairs: A/B, D/E, F/G, H/I, J/K, M/N, O/P, Q/R, S/T, U/V, W/X
+// Singles: C, L, Y
 export const Z_OFFSETS = {
-  'A': 8.0,  'B': 9.5,
-  'C': 15.0,
-  'D': 20.5, 'E': 22.0,
-  'F': 27.5, 'G': 29.0,
-  'H': 34.5, 'I': 36.0,
-  'J': 41.5, 'K': 43.0,
-  'L': 48.5,
-  'M': 54.0, 'N': 55.5,
-  'O': 61.0, 'P': 62.5,
-  'Q': 68.0, 'R': 69.5,
-  'S': 75.0, 'T': 76.5,
-  'U': 82.0, 'V': 83.5,
-  'W': 89.0, 'X': 90.5,
-  'Y': 94.5, 'Z': 96.0
+  'A': 5.0,  'B': 6.5,
+  'C': 10.5,
+  'D': 14.5, 'E': 16.0,
+  'F': 20.0, 'G': 21.5,
+  'H': 25.5, 'I': 27.0,
+  'J': 31.0, 'K': 32.5,
+  'L': 36.5,
+  'M': 40.5, 'N': 42.0,
+  'O': 46.0, 'P': 47.5,
+  'Q': 51.5, 'R': 53.0,
+  'S': 57.0, 'T': 58.5,
+  'U': 62.5, 'V': 64.0,
+  'W': 68.0, 'X': 69.5,
+  'Y': 73.5
+};
+
+export const GANGWAY_Z = {
+  'A': 3.5,  'B': 8.5,
+  'C': 8.5,
+  'D': 12.5, 'E': 18.0,
+  'F': 18.0, 'G': 23.5,
+  'H': 23.5, 'I': 29.0,
+  'J': 29.0, 'K': 34.5,
+  'L': 34.5,
+  'M': 38.5, 'N': 44.0,
+  'O': 44.0, 'P': 49.5,
+  'Q': 49.5, 'R': 55.0,
+  'S': 55.0, 'T': 60.5,
+  'U': 60.5, 'V': 66.0,
+  'W': 66.0, 'X': 71.5,
+  'Y': 71.5
 };
 
 /* ─────────────────────────────────────────────────────
@@ -109,51 +128,25 @@ export function getRackWorldPosition(rackLetter, col) {
   return { x, y: 0, z };
 }
 
-/**
- * Get the world position of a blue bin rack section.
- * Matches V29-V42 left wall locations, V01-V28/V43-V45 Mezzanine grid, and AC1-AC6 northeast grid.
- */
 export function getBinRackWorldPosition(rackId, col) {
-  if (rackId === 'V') {
-    const sectionNum = col + 1; // 1-indexed section V01 to V45
-    
-    // Physical mapping for V29 to V42 (placed vertically along the left wall)
-    if (sectionNum >= 29 && sectionNum <= 42) {
-      let z;
-      let x = 2.0;
-      if (sectionNum === 40) z = Z_OFFSETS['A'];
-      else if (sectionNum === 39) z = Z_OFFSETS['B'];
-      else if (sectionNum === 38) z = Z_OFFSETS['C'];
-      else if (sectionNum === 37) z = Z_OFFSETS['D'];
-      else if (sectionNum === 36) z = Z_OFFSETS['F'];
-      else if (sectionNum === 41) { x = 4.5; z = Z_OFFSETS['B']; }
-      else if (sectionNum === 42) { x = 4.5; z = Z_OFFSETS['C']; }
-      else if (sectionNum === 35) z = Z_OFFSETS['H'];
-      else if (sectionNum === 34) z = Z_OFFSETS['L'];
-      else if (sectionNum === 33) z = Z_OFFSETS['O'];
-      else if (sectionNum === 32) z = Z_OFFSETS['Q'];
-      else if (sectionNum === 31) z = Z_OFFSETS['S'];
-      else if (sectionNum === 30) z = Z_OFFSETS['U'];
-      else if (sectionNum === 29) z = Z_OFFSETS['V'];
-      else z = Z_OFFSETS['Y'];
-      
-      return { x, y: 0, z };
-    }
-    
-    // Mezzanine grid mapping for V01-V28 and V43-V45
-    const listIndex = sectionNum > 42 ? (sectionNum - 43 + 28) : (sectionNum - 1);
-    const r = Math.floor(listIndex / 4);
-    const c = listIndex % 4;
-    const x = 4.5 + c * 3.0;
-    const z = 2.5 + r * 1.8;
-    return { x, y: 3.2, z }; // Raised mezzanine height = 3.2m
+  // AC racks are in the mezzanine top-right area
+  if (rackId.startsWith('AC')) {
+    const rackIdx = ['AC1', 'AC2', 'AC3', 'AC4', 'AC5', 'AC6'].indexOf(rackId);
+    const x = 52.0 + rackIdx * 3.2 + col * 0.4;
+    const z = Z_OFFSETS['A'] - 3.5;
+    return { x, y: 0, z };
   }
   
-  // Northeast Blue Bin racks (AC1 - AC6)
-  const rackIdx = ['AC1', 'AC2', 'AC3', 'AC4', 'AC5', 'AC6'].indexOf(rackId);
-  const x = 52.0 + rackIdx * 3.2 + col * 0.4;
-  const z = Z_OFFSETS['A'] - 3.5;
-  return { x, y: 0, z };
+  // V racks are distributed vertically along the left wall (X = 4.0)
+  // V01-V45 run from Z = 2 to Z = 70
+  // Each section (col) is just part of that long wall.
+  // Instead of a grid, it's one long line of 45 racks.
+  const sectionIdx = parseInt(col, 10); // col is actually the section 0-44
+  
+  // They are placed against the left wall, facing right.
+  const x = 4.0;
+  const z = 4.0 + sectionIdx * 1.6; // Spread out along the Z axis
+  return { x, y: 0, z, rotation: Math.PI / 2 }; // Rotated to face the aisle
 }
 
 /**
